@@ -41,6 +41,20 @@ func main() {
 		}
 	}
 
+	// buildRootKeychain.rb adds the CABForum EV Policy OID to all roots mentioned in evroot.config.
+	for rootFilename, evoids := range evMap {
+		needToAddCABFOID := true
+		for _, evoid := range evoids {
+			if evoid == "2.23.140.1.1" {
+				needToAddCABFOID = false
+				break
+			}
+		}
+		if needToAddCABFOID {
+			evMap[rootFilename] = append(evMap[rootFilename], "2.23.140.1.1")
+		}
+	}
+
 	fmt.Printf("DELETE FROM root_trust_purpose WHERE TRUST_CONTEXT_ID = 12;\n")
 	rootsDir := certsDir + "/roots"
 	if files, err := os.ReadDir(rootsDir); err != nil {
@@ -48,7 +62,7 @@ func main() {
 		return
 	} else {
 		for _, file := range files {
-			if file.Name() == "AppleDEVID.cer" || file.Name() == ".cvsignore" {
+			if file.Name() == "AppleDEVID.cer" || file.Name() == ".cvsignore" { // buildRootKeychain.rb omits AppleDEVID.cer from SystemRootCertificates.keychain.
 				fmt.Fprintf(os.Stderr, "AppleDEVID.cer => skipped\n")
 			} else if root, err := ioutil.ReadFile(rootsDir + "/" + file.Name()); err != nil {
 				fmt.Fprintf(os.Stderr, "ioutil.ReadFile(%s) => %v\n", file.Name(), err)
