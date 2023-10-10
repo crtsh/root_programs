@@ -6,7 +6,6 @@ import (
 	"encoding/csv"
 	"encoding/hex"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 )
@@ -18,9 +17,9 @@ func main() {
 	}
 
 	certsDir := os.Args[1] + "/certificates"
-	evRootConfig, err := ioutil.ReadFile(certsDir + "/evroot.config")
+	evRootConfig, err := os.ReadFile(certsDir + "/evroot.config")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ioutil.ReadFile(evroot.config) => %v\n", err)
+		fmt.Fprintf(os.Stderr, "os.ReadFile(evroot.config) => %v\n", err)
 		return
 	}
 	reader := csv.NewReader(strings.NewReader(string(evRootConfig)))
@@ -64,8 +63,8 @@ func main() {
 		for _, file := range files {
 			if file.Name() == "AppleDEVID.cer" || file.Name() == ".cvsignore" { // buildRootKeychain.rb omits AppleDEVID.cer from SystemRootCertificates.keychain.
 				fmt.Fprintf(os.Stderr, "AppleDEVID.cer => skipped\n")
-			} else if root, err := ioutil.ReadFile(rootsDir + "/" + file.Name()); err != nil {
-				fmt.Fprintf(os.Stderr, "ioutil.ReadFile(%s) => %v\n", file.Name(), err)
+			} else if root, err := os.ReadFile(rootsDir + "/" + file.Name()); err != nil {
+				fmt.Fprintf(os.Stderr, "os.ReadFile(%s) => %v\n", file.Name(), err)
 				return
 			} else if cert, err := x509.ParseCertificate(root); err != nil {
 				fmt.Fprintf(os.Stderr, "%s => %v\n", file.Name(), err)
