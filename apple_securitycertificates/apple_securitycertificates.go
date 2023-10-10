@@ -74,7 +74,7 @@ func main() {
 				fmt.Printf("\n-- %s\n", cert.Subject.String())
 				fmt.Printf("SELECT import_cert(E'\\\\x%s');\n", strings.ToUpper(hex.EncodeToString(root)))
 				sha256Fingerprint := sha256.Sum256(cert.Raw)
-				fmt.Printf("INSERT INTO root_trust_purpose (CERTIFICATE_ID, TRUST_CONTEXT_ID, TRUST_PURPOSE_ID) SELECT c.ID, 12, tp.ID FROM certificate c, trust_purpose tp WHERE digest(c.CERTIFICATE, 'sha256') = E'\\\\x%s' AND tp.PURPOSE_OID IN ('1.3.6.1.5.5.7.3.1', '1.3.6.1.5.5.7.3.4', '1.3.6.1.5.5.7.3.3', '1.3.6.1.5.5.7.3.8', '1.3.6.1.5.5.7.3.7'", strings.ToUpper(hex.EncodeToString(sha256Fingerprint[:])))
+				fmt.Printf("INSERT INTO root_trust_purpose (CERTIFICATE_ID, TRUST_CONTEXT_ID, TRUST_PURPOSE_ID) SELECT c.ID, 12, tp.ID FROM certificate c, trust_purpose tp WHERE digest(c.CERTIFICATE, 'sha256') = E'\\\\x%s' AND tp.ID != 50 AND tp.PURPOSE_OID IN ('1.3.6.1.5.5.7.3.1', '1.3.6.1.5.5.7.3.4', '1.3.6.1.5.5.7.3.3', '1.3.6.1.5.5.7.3.8', '1.3.6.1.5.5.7.3.7'", strings.ToUpper(hex.EncodeToString(sha256Fingerprint[:])))
 				for _, evoid := range evMap[file.Name()] {
 					fmt.Printf(", '%s'", evoid)
 				}
