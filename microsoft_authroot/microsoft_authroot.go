@@ -1,44 +1,50 @@
 package main
 
 import (
+	"bytes"
+	"crypto/sha1"
+	"crypto/sha256"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"github.com/TomOnTime/utfutil"
-	"go.mozilla.org/pkcs7"
-	"io/ioutil"
+	"io"
 	"math/big"
+	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/TomOnTime/utfutil"
+
+	"go.mozilla.org/pkcs7"
 )
 
 type Sequence struct {
-	Data			asn1.RawValue
+	Data asn1.RawValue
 }
 
 type CTLEntryValue struct {
-	Data			[]byte
+	Data []byte
 }
 
 type CTLEntryAttribute struct {
-	Type			asn1.ObjectIdentifier
-	Value			CTLEntryValue `asn1:"set"`
+	Type  asn1.ObjectIdentifier
+	Value CTLEntryValue `asn1:"set"`
 }
 
 type CTLEntry struct {
-	CertFingerprint	[]byte
-	Attributes		[]CTLEntryAttribute `asn1:"set"`
+	CertFingerprint []byte
+	Attributes      []CTLEntryAttribute `asn1:"set"`
 }
 
 type CTL struct {
-	Signers			[]asn1.ObjectIdentifier
-	SequenceNumber	*big.Int
-	EffectiveDate	time.Time
-	DigestAlgorithm	pkix.AlgorithmIdentifier
-	Entries			[]CTLEntry
+	Signers         []asn1.ObjectIdentifier
+	SequenceNumber  *big.Int
+	EffectiveDate   time.Time
+	DigestAlgorithm pkix.AlgorithmIdentifier
+	Entries         []CTLEntry
 }
 
 func OIDList(data []byte) []asn1.ObjectIdentifier {
@@ -50,17 +56,17 @@ func OIDList(data []byte) []asn1.ObjectIdentifier {
 }
 
 type PolicyQualifier struct {
-	OID				asn1.ObjectIdentifier
-	Bits			asn1.BitString
+	OID  asn1.ObjectIdentifier
+	Bits asn1.BitString
 }
 
 type CertPolicy struct {
-	OID				asn1.ObjectIdentifier
-	Qualifier		[]PolicyQualifier
+	OID       asn1.ObjectIdentifier
+	Qualifier []PolicyQualifier
 }
 
 type CertPolicies struct {
-	Policies		[]CertPolicy
+	Policies []CertPolicy
 }
 
 type TrustPurpose struct {
@@ -85,17 +91,21 @@ func policyList(data []byte) []CertPolicy {
 
 func msFiletime(data []byte) *time.Time {
 	switch len(data) {
-		case 8: filetime := time.Date(1601, time.January, 1, 0, 0, int(binary.LittleEndian.Uint64(data) / 10000000), 0, time.UTC); return &filetime
-		case 0: return nil	// Since forever.
-		default: panic(fmt.Errorf("Unexpected length (%d)", len(data)))
+	case 8:
+		filetime := time.Date(1601, time.January, 1, 0, 0, int(binary.LittleEndian.Uint64(data)/10000000), 0, time.UTC)
+		return &filetime
+	case 0:
+		return nil // Since forever.
+	default:
+		panic(fmt.Errorf("unexpected length (%d)", len(data)))
 	}
 }
 
 func utf16to8(data []byte) string {
-	if bytes, err := ioutil.ReadAll(utfutil.BytesReader(data, utfutil.WINDOWS)); err != nil {
+	if bytes, err := io.ReadAll(utfutil.BytesReader(data, utfutil.WINDOWS)); err != nil {
 		panic(err)
 	} else {
-		return string(bytes[0:len(bytes)-1])
+		return string(bytes[0 : len(bytes)-1])
 	}
 }
 
@@ -103,7 +113,7 @@ func main() {
 	// Read DER-encoded authroot PKCS#7 file.
 	var err error
 	var authroot_data []byte
-	if authroot_data, err = ioutil.ReadFile(os.Args[1]); err != nil {
+	if authroot_data, err = os.ReadFile(os.Args[1]); err != nil {
 		panic(err)
 	}
 
@@ -139,24 +149,60 @@ func main() {
 		var notbefore_ekus []asn1.ObjectIdentifier
 		for _, attribute := range entry.Attributes {
 			switch attribute.Type.String() {
-				case "1.3.6.1.4.1.311.10.11.9": ekus = OIDList(attribute.Value.Data)	// CERT_ENHKEY_USAGE_PROP_ID
-				case "1.3.6.1.4.1.311.10.11.11": friendly_name = utf16to8(attribute.Value.Data)	// CERT_FRIENDLY_NAME_PROP_ID
-				case "1.3.6.1.4.1.311.10.11.20":	// CERT_KEY_IDENTIFIER_PROP_ID
-				case "1.3.6.1.4.1.311.10.11.29":	// CERT_SUBJECT_NAME_MD5_HASH_PROP_ID
-				case "1.3.6.1.4.1.311.10.11.83": policies = policyList(attribute.Value.Data)	// CERT_ROOT_PROGRAM_CERT_POLICIES_PROP_ID
-				case "1.3.6.1.4.1.311.10.11.98": cert_sha256 = hex.EncodeToString(attribute.Value.Data)	// CERT_AUTH_ROOT_SHA256_HASH_PROP_ID
-				case "1.3.6.1.4.1.311.10.11.104": disabled_from = msFiletime(attribute.Value.Data)	// CERT_DISALLOWED_FILETIME_PROP_ID
-				case "1.3.6.1.4.1.311.10.11.105":	// CERT_ROOT_PROGRAM_CHAIN_POLICIES_PROP_ID
-				case "1.3.6.1.4.1.311.10.11.122": disabled_ekus = OIDList(attribute.Value.Data)	// CERT_DISALLOWED_ENHKEY_USAGE
-				case "1.3.6.1.4.1.311.10.11.126": notbefore_before = msFiletime(attribute.Value.Data)
-				case "1.3.6.1.4.1.311.10.11.127": notbefore_ekus = OIDList(attribute.Value.Data)
-				default: panic(fmt.Errorf("%s: UNEXPECTED!", attribute.Type.String()))
+			case "1.3.6.1.4.1.311.10.11.9":
+				ekus = OIDList(attribute.Value.Data) // CERT_ENHKEY_USAGE_PROP_ID
+			case "1.3.6.1.4.1.311.10.11.11":
+				friendly_name = utf16to8(attribute.Value.Data) // CERT_FRIENDLY_NAME_PROP_ID
+			case "1.3.6.1.4.1.311.10.11.20": // CERT_KEY_IDENTIFIER_PROP_ID
+			case "1.3.6.1.4.1.311.10.11.29": // CERT_SUBJECT_NAME_MD5_HASH_PROP_ID
+			case "1.3.6.1.4.1.311.10.11.83":
+				policies = policyList(attribute.Value.Data) // CERT_ROOT_PROGRAM_CERT_POLICIES_PROP_ID
+			case "1.3.6.1.4.1.311.10.11.98":
+				cert_sha256 = hex.EncodeToString(attribute.Value.Data) // CERT_AUTH_ROOT_SHA256_HASH_PROP_ID
+			case "1.3.6.1.4.1.311.10.11.104":
+				disabled_from = msFiletime(attribute.Value.Data) // CERT_DISALLOWED_FILETIME_PROP_ID
+			case "1.3.6.1.4.1.311.10.11.105": // CERT_ROOT_PROGRAM_CHAIN_POLICIES_PROP_ID
+			case "1.3.6.1.4.1.311.10.11.122":
+				disabled_ekus = OIDList(attribute.Value.Data) // CERT_DISALLOWED_ENHKEY_USAGE
+			case "1.3.6.1.4.1.311.10.11.126":
+				notbefore_before = msFiletime(attribute.Value.Data)
+			case "1.3.6.1.4.1.311.10.11.127":
+				notbefore_ekus = OIDList(attribute.Value.Data)
+			default:
+				panic(fmt.Errorf("%s: unexpected", attribute.Type.String()))
 			}
 		}
 
 		fmt.Printf("\n-- %s [%s]\n", friendly_name, strings.ToUpper(hex.EncodeToString(entry.CertFingerprint)))
 
-		if len(ekus) == 0 {		// Equivalent to anyExtendedKeyUsage.
+		certURL := fmt.Sprintf("http://www.download.windowsupdate.com/msdownload/update/v3/static/trustedr/en/%s.crt", strings.ToUpper(hex.EncodeToString(entry.CertFingerprint)))
+		resp, err := http.Get(certURL)
+		if err != nil {
+			panic(fmt.Errorf("%s: failed to download", certURL))
+		}
+		defer resp.Body.Close()
+		derCert, err := io.ReadAll(resp.Body)
+		if err != nil {
+			panic(fmt.Errorf("%s: failed to read body", certURL))
+		}
+		sha1Cert := sha1.Sum(derCert)
+		if err != nil {
+			panic(fmt.Errorf("%s: failed to convert SHA-1 hash", certURL))
+		}
+		if !bytes.Equal(sha1Cert[:], entry.CertFingerprint) {
+			panic(fmt.Errorf("%s: cert does not match expected SHA-1 hash (%v vs %v)", certURL, hex.EncodeToString(sha1Cert[:]), hex.EncodeToString(entry.CertFingerprint)))
+		}
+		sha256Cert := sha256.Sum256(derCert)
+		expectedSHA256Cert, err := hex.DecodeString(cert_sha256)
+		if err != nil {
+			panic(fmt.Errorf("%s: failed to convert SHA-256 hash", certURL))
+		}
+		if !bytes.Equal(sha256Cert[:], expectedSHA256Cert) {
+			panic(fmt.Errorf("%s: cert does not match expected SHA-256 hash", certURL))
+		}
+		fmt.Printf("SELECT import_cert(E'\\\\x%s');\n", hex.EncodeToString(derCert))
+
+		if len(ekus) == 0 { // Equivalent to anyExtendedKeyUsage.
 			ekus = append(ekus, asn1.ObjectIdentifier{2, 5, 29, 37, 0})
 		}
 		for _, eku := range ekus {
@@ -188,7 +234,7 @@ func main() {
 				}
 			}
 
-			fmt.Printf("INSERT INTO root_trust_purpose ( CERTIFICATE_ID, TRUST_CONTEXT_ID, TRUST_PURPOSE_ID, DISABLED_FROM, NOTBEFORE_UNTIL ) SELECT c.ID, 1, tp.ID, %s, %s FROM certificate c, trust_purpose tp WHERE (digest(c.CERTIFICATE, 'sha256') = E'\\\\x%s') AND (tp.ID <= 12)", disabled_string, notbefore_string, cert_sha256);
+			fmt.Printf("INSERT INTO root_trust_purpose ( CERTIFICATE_ID, TRUST_CONTEXT_ID, TRUST_PURPOSE_ID, DISABLED_FROM, NOTBEFORE_UNTIL ) SELECT c.ID, 1, tp.ID, %s, %s FROM certificate c, trust_purpose tp WHERE (digest(c.CERTIFICATE, 'sha256') = E'\\\\x%s') AND (tp.ID <= 12)", disabled_string, notbefore_string, cert_sha256)
 			if !eku.Equal(asn1.ObjectIdentifier{2, 5, 29, 37, 0}) {
 				fmt.Printf(" AND (tp.PURPOSE_OID = '%s')", eku.String())
 			}
@@ -197,8 +243,8 @@ func main() {
 
 		if len(policies) > 0 {
 			for _, policy := range policies {
-				if !policy.OID.Equal(asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 94, 1, 1}) {		// 1.3.6.1.4.1.311.94.1.1 = EV disabled.
-					fmt.Printf("INSERT INTO root_trust_purpose ( CERTIFICATE_ID, TRUST_CONTEXT_ID, TRUST_PURPOSE_ID ) SELECT c.ID, 1, tp.ID FROM certificate c, trust_purpose tp WHERE (digest(c.CERTIFICATE, 'sha256') = E'\\\\x%s') AND (tp.PURPOSE_OID = '%s');\n", cert_sha256, policy.OID.String());
+				if !policy.OID.Equal(asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 94, 1, 1}) { // 1.3.6.1.4.1.311.94.1.1 = EV disabled.
+					fmt.Printf("INSERT INTO root_trust_purpose ( CERTIFICATE_ID, TRUST_CONTEXT_ID, TRUST_PURPOSE_ID ) SELECT c.ID, 1, tp.ID FROM certificate c, trust_purpose tp WHERE (digest(c.CERTIFICATE, 'sha256') = E'\\\\x%s') AND (tp.PURPOSE_OID = '%s');\n", cert_sha256, policy.OID.String())
 				}
 			}
 		}
