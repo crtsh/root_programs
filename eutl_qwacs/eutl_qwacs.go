@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -101,7 +102,19 @@ type AdditionalServiceInformation struct {
 	URI string
 }
 
-var http_client http.Client
+var http_client *http.Client
+
+func init() {
+	http_client = &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			DisableKeepAlives: true,
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
+}
 
 func downloadTrustList(tlurl string) (TrustServiceStatusList, error) {
 	var body []byte
