@@ -186,9 +186,6 @@ func main() {
 			panic(fmt.Errorf("%s: failed to read body", certURL))
 		}
 		sha1Cert := sha1.Sum(derCert)
-		if err != nil {
-			panic(fmt.Errorf("%s: failed to convert SHA-1 hash", certURL))
-		}
 		if !bytes.Equal(sha1Cert[:], entry.CertFingerprint) {
 			panic(fmt.Errorf("%s: cert does not match expected SHA-1 hash (%v vs %v)", certURL, hex.EncodeToString(sha1Cert[:]), hex.EncodeToString(entry.CertFingerprint)))
 		}
