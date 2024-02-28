@@ -73,9 +73,6 @@ type CertPolicies struct {
 	Policies []CertPolicy
 }
 
-type TrustPurpose struct {
-}
-
 func policyList(data []byte) []CertPolicy {
 	// Wrap policy list in a SEQUENCE.
 	seq := Sequence{Data: asn1.RawValue{FullBytes: data}}
@@ -101,7 +98,7 @@ func msFiletime(data []byte) *time.Time {
 	case 0:
 		return nil // Since forever.
 	default:
-		panic(fmt.Errorf("unexpected length (%d)", len(data)))
+		panic(fmt.Errorf("unexpected length: %d", len(data)))
 	}
 }
 
@@ -198,7 +195,7 @@ func main() {
 			case "1.3.6.1.4.1.311.10.11.127":
 				notbefore_ekus = OIDList(attribute.Value.Data)
 			default:
-				panic(fmt.Errorf("%s: unexpected", attribute.Type.String()))
+				panic(fmt.Errorf("unexpected attribute: %s", attribute.Type.String()))
 			}
 		}
 
