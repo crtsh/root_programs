@@ -1,6 +1,6 @@
 module github.com/crtsh/root_programs/microsoft_authroot
 
-go 1.13
+go 1.18
 
 require (
 	github.com/TomOnTime/utfutil v0.0.0-20200626160131-0b0178852c8f

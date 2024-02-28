@@ -2,8 +2,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/binary"
@@ -45,6 +48,7 @@ type CTL struct {
 	EffectiveDate   time.Time
 	DigestAlgorithm pkix.AlgorithmIdentifier
 	Entries         []CTLEntry
+	Extensions      []pkix.Extension `asn1:"omitempty,optional,explicit,tag:0"`
 }
 
 func OIDList(data []byte) []asn1.ObjectIdentifier {
@@ -107,6 +111,31 @@ func utf16to8(data []byte) string {
 	} else {
 		return string(bytes[0 : len(bytes)-1])
 	}
+}
+
+func ctLogList(data []byte) []any {
+	var sequences []asn1.RawValue
+	if _, err := asn1.Unmarshal(data, &sequences); err != nil {
+		panic(err)
+	}
+
+	var sequenceOfIntegers []int
+	if _, err := asn1.Unmarshal(sequences[0].FullBytes, &sequenceOfIntegers); err != nil {
+		panic(err)
+	} else {
+		fmt.Printf("\n  -- CT Log List Version?: %v\n", sequenceOfIntegers)
+	}
+
+	var publicKeys []any
+	for _, sequence := range sequences[1:] {
+		if pub, err := x509.ParsePKIXPublicKey(sequence.FullBytes); err != nil {
+			panic(err)
+		} else {
+			publicKeys = append(publicKeys, pub)
+		}
+	}
+
+	return publicKeys
 }
 
 func main() {
@@ -244,6 +273,38 @@ func main() {
 					fmt.Printf("INSERT INTO root_trust_purpose ( CERTIFICATE_ID, TRUST_CONTEXT_ID, TRUST_PURPOSE_ID ) SELECT c.ID, 1, tp.ID FROM certificate c, trust_purpose tp WHERE (digest(c.CERTIFICATE, 'sha256') = E'\\\\x%s') AND (tp.PURPOSE_OID = '%s');\n", cert_sha256, policy.OID.String())
 				}
 			}
+		}
+	}
+
+	for _, extension := range ctl.Extensions {
+		switch extension.Id.String() {
+		case "1.3.6.1.4.1.311.10.3.52":
+			fmt.Printf("\n-- Clear previous Microsoft CT Log List inclusion status.\n")
+			fmt.Printf("UPDATE ct_log SET MICROSOFT_INCLUSION_STATUS = NULL;\n")
+			fmt.Printf("\n-- Set current Microsoft CT Log List inclusion status.\n")
+			fmt.Printf("UPDATE ct_log SET MICROSOFT_INCLUSION_STATUS = 'Usable' WHERE digest(PUBLIC_KEY, 'sha256') IN (")
+			ctLogSPKIs := ctLogList(extension.Value)
+			for i, ctLogSPKI := range ctLogSPKIs {
+				spki, err := x509.MarshalPKIXPublicKey(ctLogSPKI)
+				if err != nil {
+					panic(err)
+				} else if i > 0 {
+					fmt.Printf(",\n")
+				}
+				switch t := ctLogSPKI.(type) {
+				case *ecdsa.PublicKey:
+					fmt.Printf("  -- ECDSA %s SPKI: %s\n", t.Curve.Params().Name, hex.EncodeToString(spki))
+				case *rsa.PublicKey:
+					fmt.Printf("  -- RSA-%d SPKI: %s\n", t.N.BitLen(), hex.EncodeToString(spki))
+				default:
+					panic(fmt.Errorf("unexpected public key type: %T", t))
+				}
+				sha256SPKI := sha256.Sum256(spki)
+				fmt.Printf("  E'\\\\x%s'", hex.EncodeToString(sha256SPKI[:]))
+			}
+			fmt.Printf("\n);\n")
+		default:
+			panic(fmt.Errorf("unexpected extension: %s", extension.Id.String()))
 		}
 	}
 }
