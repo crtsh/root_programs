@@ -31,16 +31,11 @@ const (
 	ekuClientAuth      = "1.3.6.1.5.5.7.3.2"
 	ekuEmailProtection = "1.3.6.1.5.5.7.3.4"
 	ekuCodeSigning     = "1.3.6.1.5.5.7.3.3"
-	ekuIPSecUser       = "1.3.6.1.5.5.7.3.7" // TODO: Is this needed?
 	ekuTimeStamping    = "1.3.6.1.5.5.7.3.8"
-	ekuEAPOverPPP      = "1.3.6.1.5.5.7.3.13" // TODO: Is this needed?
-	ekuEAPOverLAN      = "1.3.6.1.5.5.7.3.14" // TODO: Is this needed?
 )
 
 var (
-	// TODO: Which OIDs are actually in the default list?  The root program and macOS certificate viewer seems to have different opinions.  Specifically, Client Authentication is absent from, and EAP and IPSec are present in, the certificate viewer.
-	defaultTrustBitOIDList = []string{ekuServerAuth, ekuEmailProtection, ekuEAPOverPPP, ekuEAPOverLAN, ekuIPSecUser, ekuCodeSigning, ekuTimeStamping}
-	// defaultTrustBitOIDList = []string{ekuServerAuth, ekuClientAuth, ekuEmailProtection, ekuCodeSigning, ekuTimeStamping}
+	defaultTrustBitOIDList = []string{ekuServerAuth, ekuClientAuth, ekuEmailProtection, ekuCodeSigning, ekuTimeStamping}
 )
 
 // Documentation for the "Valid" DB schema: https://github.com/apple-oss-distributions/Security/blob/main/trust/trustd/SecRevocationDb.c#L1529
