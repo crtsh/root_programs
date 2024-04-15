@@ -40,6 +40,19 @@ var (
 
 // Documentation for the "Valid" DB schema: https://github.com/apple-oss-distributions/Security/blob/main/trust/trustd/SecRevocationDb.c#L1529
 
+func isPlatformRoot(sha256Fingerprint [sha256.Size]byte) bool {
+	switch strings.ToUpper(hex.EncodeToString(sha256Fingerprint[:])) {
+	case "B0B1730ECBC7FF4505142C49F1295E6EDA6BCAED7E2C68C5BE91B5A11001F024": // Apple Root CA
+	case "C2B9B042DD57830E7D117DAC55AC8AE19407D38E41D88F3215BC3A890444A050": // Apple Root CA - G2
+	case "63343ABFB89A6A03EBB57E9B3F5FA7BE7C4F5C756F3017B3A8C488C3653E9179": // Apple Root CA - G3
+	case "0D83B611B648A1A75EB8558400795375CAD92E264ED8E9D7A757C1F5EE2BB22D": // Apple Root Certificate Authority
+	case "7AFC9D01A62F03A2DE9637936D4AFE68090D2DE18D03F29C88CFB0B1BA63587F": // Developer ID Certification Authority
+	default:
+		return false
+	}
+	return true
+}
+
 func groupsFlagsToString(flags int64) string {
 	// flags (integer): a bitmask of the following values:
 	var flagsString string
@@ -204,8 +217,8 @@ func main() {
 		return
 	} else {
 		for _, file := range files {
-			if file.Name() == "AppleDEVID.cer" || file.Name() == ".cvsignore" { // buildRootKeychain.rb omits AppleDEVID.cer from SystemRootCertificates.keychain.
-				fmt.Fprintf(os.Stderr, "AppleDEVID.cer => skipped\n") // TODO: There are several other roots that aren't part of the Apple Root Program. How can we identify these programmatically?
+			if file.Name() == ".cvsignore" {
+				continue
 			} else if root, err := os.ReadFile(rootsDir + "/" + file.Name()); err != nil {
 				fmt.Fprintf(os.Stderr, "os.ReadFile(%s) => %v\n", file.Name(), err)
 				return
@@ -213,15 +226,21 @@ func main() {
 				fmt.Fprintf(os.Stderr, "%s => %v\n", file.Name(), err)
 				return
 			} else {
+				// Ignore the "platform roots" that are not considered part of the Apple Root Program despite appearing in security_certificates.
+				sha256Fingerprint := sha256.Sum256(cert.Raw)
+				if isPlatformRoot(sha256Fingerprint) {
+					fmt.Fprintf(os.Stderr, "%s => skipped (platform root)\n", file.Name())
+					continue
+				}
+
 				fmt.Fprintf(os.Stderr, "%s => processed\n", file.Name())
 
 				fmt.Printf("\n-- %s\n", cert.Subject.String())
 				fmt.Printf("SELECT import_cert(E'\\\\x%s');\n", strings.ToUpper(hex.EncodeToString(root)))
-				sha256Fingerprint := sha256.Sum256(cert.Raw)
 
 				// Fetch any additional trust metadata for this root from the "Valid" DB snapshot.
 				var flags, format int64
-				var data, policies, sha256 []byte      // TODO: What is the 'hashes' table for?
+				var data, policies, sha256 []byte
 				var notBefore, notAfter sql.NullString // These are stored on the database as CFAbsoluteTime values (see https://developer.apple.com/documentation/corefoundation/cfabsolutetime).
 				err = db.QueryRow(`
 SELECT g.FLAGS, g.FORMAT, g.DATA, g.POLICIES, datetime(d.NOTBEFORE, 'unixepoch', '+31 years'), datetime(d.NOTAFTER, 'unixepoch', '+31 years'), h.SHA256
@@ -238,6 +257,8 @@ SELECT g.FLAGS, g.FORMAT, g.DATA, g.POLICIES, datetime(d.NOTBEFORE, 'unixepoch',
 				flagsString := groupsFlagsToString(flags)
 				trustBitsOIDList := groupsPoliciesToOIDListString(flags, policies)
 				notBeforeUntil := dateConstraints(flags, notAfter)
+
+				// TODO: Apply any distrust exemption indicated by the SHA-256 hash from the 'hashes' table.  (e.g., see https://support.apple.com/en-us/103187).
 
 				fmt.Printf("INSERT INTO root_trust_purpose (CERTIFICATE_ID, TRUST_CONTEXT_ID, TRUST_PURPOSE_ID, NOTBEFORE_UNTIL) SELECT c.ID, 12, tp.ID, %s FROM certificate c, trust_purpose tp WHERE digest(c.CERTIFICATE, 'sha256') = E'\\\\x%s' AND tp.ID != 50 AND tp.PURPOSE_OID IN (%s", notBeforeUntil, strings.ToUpper(hex.EncodeToString(sha256Fingerprint[:])), trustBitsOIDList)
 				for _, evoid := range evMap[file.Name()] {
