@@ -230,28 +230,32 @@ func main() {
 		}
 		for _, eku := range ekus {
 			disabled_string := "NULL"
-			if (disabled_from == nil) && (len(disabled_ekus) > 0) {
-				disabled_string = "'-infinity'::date"
-			} else if (disabled_from != nil) && (len(disabled_ekus) == 0) {
+			if (disabled_from != nil) && (len(disabled_ekus) == 0) {
 				disabled_string = fmt.Sprintf("'%s'::timestamp", disabled_from.Format(time.RFC3339))
 			} else {
 				for _, disabled_eku := range disabled_ekus {
 					if eku.Equal(disabled_eku) {
-						disabled_string = fmt.Sprintf("'%s'::timestamp", disabled_from.Format(time.RFC3339))
+						if disabled_from != nil {
+							disabled_string = fmt.Sprintf("'%s'::timestamp", disabled_from.Format(time.RFC3339))
+						} else {
+							disabled_string = "'-infinity'::date"
+						}
 						break
 					}
 				}
 			}
 
 			notbefore_string := "NULL"
-			if (notbefore_before == nil) && (len(notbefore_ekus) > 0) {
-				notbefore_string = "'-infinity'::date"
-			} else if (notbefore_before != nil) && len(notbefore_ekus) == 0 {
+			if (notbefore_before != nil) && (len(notbefore_ekus) == 0) {
 				notbefore_string = fmt.Sprintf("'%s'::timestamp", notbefore_before.Format(time.RFC3339))
 			} else {
 				for _, notbefore_eku := range notbefore_ekus {
 					if eku.Equal(notbefore_eku) {
-						notbefore_string = fmt.Sprintf("'%s'::timestamp", notbefore_before.Format(time.RFC3339))
+						if notbefore_before != nil {
+							notbefore_string = fmt.Sprintf("'%s'::timestamp", notbefore_before.Format(time.RFC3339))
+						} else {
+							notbefore_string = "'-infinity'::date"
+						}
 						break
 					}
 				}
