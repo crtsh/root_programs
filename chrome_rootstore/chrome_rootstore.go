@@ -18,7 +18,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/crtsh/root_programs/chrome_rootstore/root_store"
+	root_store "github.com/crtsh/root_programs/chrome_rootstore/root_store"
 
 	"google.golang.org/protobuf/encoding/prototext"
 )
