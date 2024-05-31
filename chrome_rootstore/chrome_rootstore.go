@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	root_store "github.com/crtsh/root_programs/chrome_rootstore/root_store"
 
@@ -93,9 +94,19 @@ func main() {
 			if cm != nil {
 				fmt.Printf("SELECT import_cert(E'\\\\x%s');\n", hex.EncodeToString(cm.Raw))
 			}
-			fmt.Printf("INSERT INTO root_trust_purpose ( CERTIFICATE_ID, TRUST_CONTEXT_ID, TRUST_PURPOSE_ID ) SELECT c.ID, 6, 1 FROM certificate c WHERE (digest(c.CERTIFICATE, 'sha256') = E'\\\\x%s');\n", ta.GetSha256Hex())
+
+			notBeforeUntil := "NULL"
+			if constraints := ta.GetConstraints(); constraints != nil {
+				for _, c := range constraints {
+					if sctNotAfterSec := c.GetSctNotAfterSec(); sctNotAfterSec > 0 {
+						notBeforeUntil = "'" + time.Unix(sctNotAfterSec, 0).UTC().Format(time.RFC3339) + "'"
+					}
+				}
+			}
+
+			fmt.Printf("INSERT INTO root_trust_purpose ( CERTIFICATE_ID, TRUST_CONTEXT_ID, TRUST_PURPOSE_ID, NOT_BEFORE_UNTIL ) SELECT c.ID, 6, 1, %s FROM certificate c WHERE (digest(c.CERTIFICATE, 'sha256') = E'\\\\x%s');\n", notBeforeUntil, ta.GetSha256Hex())
 			for _, evPolicy := range ta.GetEvPolicyOids() {
-				fmt.Printf("INSERT INTO root_trust_purpose ( CERTIFICATE_ID, TRUST_CONTEXT_ID, TRUST_PURPOSE_ID ) SELECT c.ID, 6, tp.ID FROM certificate c, trust_purpose tp WHERE (digest(c.CERTIFICATE, 'sha256') = E'\\\\x%s') AND (tp.PURPOSE_OID = '%s');\n", ta.GetSha256Hex(), evPolicy)
+				fmt.Printf("INSERT INTO root_trust_purpose ( CERTIFICATE_ID, TRUST_CONTEXT_ID, TRUST_PURPOSE_ID, NOT_BEFORE_UNTIL ) SELECT c.ID, 6, tp.ID, %s FROM certificate c, trust_purpose tp WHERE (digest(c.CERTIFICATE, 'sha256') = E'\\\\x%s') AND (tp.PURPOSE_OID = '%s');\n", notBeforeUntil, ta.GetSha256Hex(), evPolicy)
 			}
 			fmt.Printf("\n")
 		}
