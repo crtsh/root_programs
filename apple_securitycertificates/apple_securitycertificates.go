@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -47,6 +48,17 @@ func isPlatformRoot(sha256Fingerprint [sha256.Size]byte) bool {
 	case "63343ABFB89A6A03EBB57E9B3F5FA7BE7C4F5C756F3017B3A8C488C3653E9179": // Apple Root CA - G3
 	case "0D83B611B648A1A75EB8558400795375CAD92E264ED8E9D7A757C1F5EE2BB22D": // Apple Root Certificate Authority
 	case "7AFC9D01A62F03A2DE9637936D4AFE68090D2DE18D03F29C88CFB0B1BA63587F": // Developer ID Certification Authority
+	case "5FBD45B0303B6247E410328864B795BF91F44856BE6CBD8D1949FF60A6F51908": // Apple Platform Bootstrap ECC Root CA - G1
+	case "559E1C5406885233CAB74780E22766A4F476D717892E6277903397A8172CD42D": // Apple Platform Code Signing ECC Root CA - G1
+	case "0CB9124CADFF41D02701F59B477D71E2690B38ADD9F524C49BBED0140AD9B9EC": // Apple Platform Code Signing RSA Root CA
+	case "99DAD8412FF1155B12759717AEF5A31E6E089E357539FACA3D57E138018493B3": // Apple Platform Developer ECC Root CA - G1
+	case "8174FDD9DB62E04DD18F17D1224406C7A2CC8D5DB5816F3DC7F5E900047E7FB7": // Apple Platform Developer RSA Root CA - G1
+	case "2AA219A1DF9E699C513E3304224C0695AB0BC244BF3334F7B1EE8DB12E16AE9B": // Apple Platform ECC Root CA - G1
+	case "FFE0E2FAB9A71C9DC927B3211EFBB315BB0048B1E8A6621947B2B10363051C2F": // Apple Platform Multipurpose ECC Root CA - G1
+	case "FA760B953DFD935CA420BA9BAA5F07067FAD4449B5554B9418CBDD12E0A56EDA": // Apple Platform Multipurpose RSA Root CA - G1
+	case "5A5044783B2CC790A92D68A59E1EEE167108B204F060A8378D539016F4670BC9": // Apple Platform RSA Root CA - G1
+	case "F5FCC6D6D0E17D462CB2C9F0D08826BD87F10175523766DA26C2CEB6460CF7A2": // Apple Platform TLS ECC Root CA - G1
+	case "49BACA97E0D741A4B1B695EE9BDC859F431DE9714884F674E97F43707A61F92D": // Apple Platform TLS RSA Root CA - G1
 	default:
 		return false
 	}
@@ -153,42 +165,65 @@ func dateConstraints(flags int64, notAfter sql.NullString) string {
 	return "'" + notAfter.String + "'::timestamp"
 }
 
-func getEVPolicyMap(filename string) map[string][]string {
-	// Read EV config file.
-	evRootConfig, err := os.ReadFile(filename)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Parse EV config.
-	reader := csv.NewReader(strings.NewReader(string(evRootConfig)))
-	reader.Comma = ' '
-	reader.Comment = '#'
-	reader.FieldsPerRecord = -1
-	records, err := reader.ReadAll()
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Create map of EV config.
+func getEVPolicyMap(cfgFilename, jsonFilename string) map[string][]string {
 	evMap := make(map[string][]string)
-	for _, line := range records {
-		oid := line[0]
-		for i := 1; i < len(line); i++ {
-			evMap[line[i]] = append(evMap[line[i]], oid)
+
+	// Read EV config file.
+	evRootConfig, err := os.ReadFile(cfgFilename)
+	if err == nil {
+		// Parse EV config.
+		reader := csv.NewReader(strings.NewReader(string(evRootConfig)))
+		reader.Comma = ' '
+		reader.Comment = '#'
+		reader.FieldsPerRecord = -1
+		records, err := reader.ReadAll()
+		if err != nil {
+			log.Fatal(err)
 		}
-	}
-	// Add the CABForum EV Policy OID to all roots mentioned in evroot.config, mirroring the behaviour of the security_certificates buildRootKeychain.rb script.
-	for rootFilename, evoids := range evMap {
-		needToAddCABFOID := true
-		for _, evoid := range evoids {
-			if evoid == "2.23.140.1.1" {
-				needToAddCABFOID = false
-				break
+		// Populate map of EV config.
+		for _, line := range records {
+			oid := line[0]
+			for i := 1; i < len(line); i++ {
+				evMap[line[i]] = append(evMap[line[i]], oid)
 			}
 		}
-		if needToAddCABFOID {
-			evMap[rootFilename] = append(evMap[rootFilename], "2.23.140.1.1")
+		// Add the CABForum EV Policy OID to all roots mentioned in evroot.config, mirroring the behaviour of the security_certificates buildRootKeychain.rb script.
+		for rootFilename, evoids := range evMap {
+			needToAddCABFOID := true
+			for _, evoid := range evoids {
+				if evoid == "2.23.140.1.1" {
+					needToAddCABFOID = false
+					break
+				}
+			}
+			if needToAddCABFOID {
+				evMap[rootFilename] = append(evMap[rootFilename], "2.23.140.1.1")
+			}
+		}
+	} else {
+		// Read EV JSON file.
+		evRootJSON, err := os.ReadFile(jsonFilename)
+		if err != nil {
+			log.Fatalf("failed to read both %s and %s", cfgFilename, jsonFilename)
+		}
+		// Unmarshal EV JSON.
+		var elements any
+		err = json.Unmarshal(evRootJSON, &elements)
+		if err != nil {
+			log.Fatal(err)
+		}
+		// Populate map of EV config.
+		for k := range elements.(map[string]any) {
+			if k == "EV_config" {
+				for fingerprint, evoids := range elements.(map[string]any)[k].(map[string]any) {
+					for _, oid := range evoids.([]any) {
+						evMap[fingerprint] = append(evMap[fingerprint], oid.(string))
+					}
+				}
+			}
 		}
 	}
+
 	return evMap
 }
 
@@ -200,7 +235,7 @@ func main() {
 
 	// Parse the EV config file.
 	certsDir := os.Args[1] + "/certificates"
-	evMap := getEVPolicyMap(certsDir + "/evroot.config")
+	evMap := getEVPolicyMap(certsDir+"/evroot.config", certsDir+"/EVRoots.json")
 
 	// Open the Valid DB snapshot, which contains trust bit restrictions for some roots.
 	db, err := sql.Open("sqlite3", os.Args[1]+"/valid_db_snapshot/valid.sqlite3")
