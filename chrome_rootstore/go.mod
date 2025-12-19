@@ -1,5 +1,7 @@
 module github.com/crtsh/root_programs/chrome_rootstore
 
-go 1.19
+go 1.23
 
-require google.golang.org/protobuf v1.34.1
+toolchain go1.24.4
+
+require google.golang.org/protobuf v1.36.11
